@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<title>Local Docs Vault</title>
+<style>
+* {
+    box-sizing: border-box;
+    font-family: "Segoe UI", sans-serif;
+}
+
+body {
+    margin: 0;
+    background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+    color: white;
+    display: flex;
+    height: 100vh;
+}
+
+/* Sidebar */
+aside {
+    width: 260px;
+    background: rgba(255,255,255,0.08);
+    backdrop-filter: blur(12px);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+button {
+    padding: 10px;
+    border: none;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.15);
+    color: white;
+    cursor: pointer;
+}
+
+button:hover {
+    background: rgba(255,255,255,0.25);
+}
+
+/* Main */
+main {
+    flex: 1;
+    padding: 25px;
+    display: flex;
+    flex-direction: column;
+}
+
+input, textarea, select {
+    width: 100%;
+    padding: 10px;
+    border-radius: 10px;
+    border: none;
+    margin-bottom: 10px;
+    background: rgba(255,255,255,0.15);
+    color: white;
+}
+
+textarea {
+    flex: 1;
+    resize: none;
+}
+
+.doc {
+    padding: 10px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.12);
+    margin-bottom: 10px;
+    cursor: pointer;
+}
+</style>
+</head>
+<body>
+
+<aside>
+    <button onclick="newDoc()">➕ Nieuw document</button>
+    <button onclick="showDocs()">📄 Documenten</button>
+    <button onclick="showTrash()">🗑 Prullenmand</button>
+</aside>
+
+<main>
+    <input id="title" placeholder="Document naam">
+    <input id="password" placeholder="Wachtwoord (optioneel)">
+    <textarea id="content" placeholder="Typ hier oneindig..."></textarea>
+
+    <button onclick="saveDoc()">💾 Opslaan</button>
+    <button onclick="deleteDoc()">🗑 Verwijderen</button>
+
+    <div id="list"></div>
+</main>
+
+<script>
+let currentId = null;
+
+function load(key) {
+    return JSON.parse(localStorage.getItem(key) || "[]");
+}
+
+function save(key, data) {
+    localStorage.setItem(key, JSON.stringify(data));
+}
+
+/* Auto clean trash (30 dagen) */
+(function cleanTrash() {
+    let trash = load("trash");
+    const now = Date.now();
+    trash = trash.filter(d => now - d.deletedAt < 30 * 24 * 60 * 60 * 1000);
+    save("trash", trash);
+})();
+
+function newDoc() {
+    currentId = null;
+    title.value = "";
+    password.value = "";
+    content.value = "";
+}
+
+function saveDoc() {
+    let docs = load("docs");
+
+    if (!title.value) return alert("Geef document een naam");
+
+    if (currentId) {
+        let doc = docs.find(d => d.id === currentId);
+        doc.title = title.value;
+        doc.content = content.value;
+        doc.password = password.value;
+    } else {
+        docs.push({
+            id: crypto.randomUUID(),
+            title: title.value,
+            content: content.value,
+            password: password.value,
+            createdAt: Date.now()
+        });
+    }
+
+    save("docs", docs);
+    showDocs();
+}
+
+function showDocs() {
+    list.innerHTML = "<h3>Documenten</h3>";
+    load("docs").forEach(d => {
+        let div = document.createElement("div");
+        div.className = "doc";
+        div.textContent = d.title;
+        div.onclick = () => openDoc(d.id);
+        list.appendChild(div);
+    });
+}
+
+function openDoc(id) {
+    let doc = load("docs").find(d => d.id === id);
+
+    if (doc.password) {
+        let pw = prompt("Wachtwoord:");
+        if (pw !== doc.password) return alert("Fout wachtwoord");
+    }
+
+    currentId = id;
+    title.value = doc.title;
+    content.value = doc.content;
+    password.value = doc.password;
+}
+
+function deleteDoc() {
+    if (!currentId) return;
+
+    let docs = load("docs");
+    let doc = docs.find(d => d.id === currentId);
+
+    docs = docs.filter(d => d.id !== currentId);
+    save("docs", docs);
+
+    doc.deletedAt = Date.now();
+    let trash = load("trash");
+    trash.push(doc);
+    save("trash", trash);
+
+    newDoc();
+    showDocs();
+}
+
+function showTrash() {
+    list.innerHTML = "<h3>Prullenmand</h3>";
+    load("trash").forEach(d => {
+        let div = document.createElement("div");
+        div.className = "doc";
+        div.textContent = d.title + " (verwijderd)";
+        list.appendChild(div);
+    });
+}
+
+showDocs();
+</script>
+
+</body>
+</html>
