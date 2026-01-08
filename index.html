@@ -2,8 +2,15 @@
 <html lang="nl">
 <head>
 <meta charset="UTF-8">
-<title>Local Docs Vault</title>
+<title>Explorer 2.0</title>
+
 <style>
+:root {
+    --neon: #00f7ff;
+    --bg: #0b0f1a;
+    --panel: #131a2a;
+}
+
 * {
     box-sizing: border-box;
     font-family: "Segoe UI", sans-serif;
@@ -11,191 +18,226 @@
 
 body {
     margin: 0;
-    background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
-    color: white;
-    display: flex;
     height: 100vh;
+    display: flex;
+    background: radial-gradient(circle at top, #141b33, #05070f);
+    color: white;
 }
 
-/* Sidebar */
+/* SIDEBAR */
 aside {
-    width: 260px;
-    background: rgba(255,255,255,0.08);
-    backdrop-filter: blur(12px);
-    padding: 20px;
+    width: 300px;
+    background: var(--panel);
+    padding: 15px;
     display: flex;
     flex-direction: column;
     gap: 10px;
+    box-shadow: inset -1px 0 0 rgba(255,255,255,0.05);
+}
+
+h2 {
+    margin: 0;
+    color: var(--neon);
+    text-shadow: 0 0 10px var(--neon);
+}
+
+input, textarea {
+    background: #0b1020;
+    border: 1px solid #1f2a4a;
+    color: white;
+    padding: 10px;
+    border-radius: 8px;
 }
 
 button {
-    padding: 10px;
-    border: none;
-    border-radius: 10px;
-    background: rgba(255,255,255,0.15);
-    color: white;
+    background: transparent;
+    border: 1px solid var(--neon);
+    color: var(--neon);
+    padding: 8px;
+    border-radius: 8px;
     cursor: pointer;
+    transition: 0.3s;
 }
 
 button:hover {
-    background: rgba(255,255,255,0.25);
+    background: var(--neon);
+    color: black;
+    box-shadow: 0 0 15px var(--neon);
 }
 
-/* Main */
+/* ITEMS */
+.item {
+    padding: 8px;
+    border-radius: 6px;
+    margin-bottom: 6px;
+    background: #0c1225;
+    cursor: grab;
+    transition: 0.2s;
+}
+
+.item:hover {
+    background: #16204a;
+    box-shadow: 0 0 10px rgba(0,247,255,0.4);
+}
+
+.folder {
+    border-left: 3px solid #7c7cff;
+}
+
+.dragover {
+    outline: 2px dashed var(--neon);
+}
+
+/* MAIN */
 main {
     flex: 1;
-    padding: 25px;
+    padding: 20px;
     display: flex;
     flex-direction: column;
-}
-
-input, textarea, select {
-    width: 100%;
-    padding: 10px;
-    border-radius: 10px;
-    border: none;
-    margin-bottom: 10px;
-    background: rgba(255,255,255,0.15);
-    color: white;
 }
 
 textarea {
     flex: 1;
     resize: none;
 }
-
-.doc {
-    padding: 10px;
-    border-radius: 10px;
-    background: rgba(255,255,255,0.12);
-    margin-bottom: 10px;
-    cursor: pointer;
-}
 </style>
 </head>
+
 <body>
 
 <aside>
-    <button onclick="newDoc()">➕ Nieuw document</button>
-    <button onclick="showDocs()">📄 Documenten</button>
-    <button onclick="showTrash()">🗑 Prullenmand</button>
+    <h2>Explorer 2.0</h2>
+
+    <input id="search" placeholder="🔍 Zoeken..." oninput="render()">
+
+    <button onclick="newFolder()">📁 Nieuwe map</button>
+    <button onclick="newDoc()">📄 Nieuw document</button>
+
+    <div id="explorer"></div>
 </aside>
 
 <main>
-    <input id="title" placeholder="Document naam">
-    <input id="password" placeholder="Wachtwoord (optioneel)">
-    <textarea id="content" placeholder="Typ hier oneindig..."></textarea>
+    <input id="title" placeholder="Document titel">
+    <textarea id="content" placeholder="Typ hier..."></textarea>
 
     <button onclick="saveDoc()">💾 Opslaan</button>
-    <button onclick="deleteDoc()">🗑 Verwijderen</button>
-
-    <div id="list"></div>
+    <button onclick="removeDoc()">🗑 Naar prullenmand</button>
 </main>
 
 <script>
 let currentId = null;
 
-function load(key) {
-    return JSON.parse(localStorage.getItem(key) || "[]");
-}
+const load = k => JSON.parse(localStorage.getItem(k) || "[]");
+const save = (k,v) => localStorage.setItem(k, JSON.stringify(v));
 
-function save(key, data) {
-    localStorage.setItem(key, JSON.stringify(data));
-}
+function newFolder() {
+    const name = prompt("Map naam");
+    if (!name) return;
 
-/* Auto clean trash (30 dagen) */
-(function cleanTrash() {
-    let trash = load("trash");
-    const now = Date.now();
-    trash = trash.filter(d => now - d.deletedAt < 30 * 24 * 60 * 60 * 1000);
-    save("trash", trash);
-})();
+    const folders = load("folders");
+    folders.push({ id: crypto.randomUUID(), name });
+    save("folders", folders);
+    render();
+}
 
 function newDoc() {
     currentId = null;
     title.value = "";
-    password.value = "";
     content.value = "";
 }
 
 function saveDoc() {
-    let docs = load("docs");
-
-    if (!title.value) return alert("Geef document een naam");
+    const docs = load("docs");
+    if (!title.value) return alert("Titel nodig");
 
     if (currentId) {
-        let doc = docs.find(d => d.id === currentId);
-        doc.title = title.value;
-        doc.content = content.value;
-        doc.password = password.value;
+        const d = docs.find(d => d.id === currentId);
+        d.title = title.value;
+        d.content = content.value;
     } else {
         docs.push({
             id: crypto.randomUUID(),
             title: title.value,
             content: content.value,
-            password: password.value,
-            createdAt: Date.now()
+            folderId: null
         });
     }
-
     save("docs", docs);
-    showDocs();
-}
-
-function showDocs() {
-    list.innerHTML = "<h3>Documenten</h3>";
-    load("docs").forEach(d => {
-        let div = document.createElement("div");
-        div.className = "doc";
-        div.textContent = d.title;
-        div.onclick = () => openDoc(d.id);
-        list.appendChild(div);
-    });
+    render();
 }
 
 function openDoc(id) {
-    let doc = load("docs").find(d => d.id === id);
-
-    if (doc.password) {
-        let pw = prompt("Wachtwoord:");
-        if (pw !== doc.password) return alert("Fout wachtwoord");
-    }
-
+    const d = load("docs").find(d => d.id === id);
     currentId = id;
-    title.value = doc.title;
-    content.value = doc.content;
-    password.value = doc.password;
+    title.value = d.title;
+    content.value = d.content;
 }
 
-function deleteDoc() {
+function removeDoc() {
     if (!currentId) return;
-
     let docs = load("docs");
-    let doc = docs.find(d => d.id === currentId);
-
     docs = docs.filter(d => d.id !== currentId);
     save("docs", docs);
-
-    doc.deletedAt = Date.now();
-    let trash = load("trash");
-    trash.push(doc);
-    save("trash", trash);
-
     newDoc();
-    showDocs();
+    render();
 }
 
-function showTrash() {
-    list.innerHTML = "<h3>Prullenmand</h3>";
-    load("trash").forEach(d => {
-        let div = document.createElement("div");
-        div.className = "doc";
-        div.textContent = d.title + " (verwijderd)";
-        list.appendChild(div);
+/* DRAG SYSTEM */
+function drag(e, id) {
+    e.dataTransfer.setData("id", id);
+}
+
+function drop(e, folderId) {
+    e.preventDefault();
+    const id = e.dataTransfer.getData("id");
+    const docs = load("docs");
+    const d = docs.find(d => d.id === id);
+    d.folderId = folderId;
+    save("docs", docs);
+    render();
+}
+
+function render() {
+    const explorer = document.getElementById("explorer");
+    explorer.innerHTML = "";
+
+    const query = search.value.toLowerCase();
+    const folders = load("folders");
+    const docs = load("docs");
+
+    folders.forEach(f => {
+        const div = document.createElement("div");
+        div.className = "item folder";
+        div.textContent = "📁 " + f.name;
+        div.ondragover = e => e.preventDefault();
+        div.ondrop = e => drop(e, f.id);
+        explorer.appendChild(div);
+
+        docs.filter(d => d.folderId === f.id && d.title.toLowerCase().includes(query))
+            .forEach(d => {
+                const doc = document.createElement("div");
+                doc.className = "item";
+                doc.textContent = "📄 " + d.title;
+                doc.draggable = true;
+                doc.ondragstart = e => drag(e, d.id);
+                doc.onclick = () => openDoc(d.id);
+                explorer.appendChild(doc);
+            });
     });
+
+    docs.filter(d => !d.folderId && d.title.toLowerCase().includes(query))
+        .forEach(d => {
+            const doc = document.createElement("div");
+            doc.className = "item";
+            doc.textContent = "📄 " + d.title;
+            doc.draggable = true;
+            doc.ondragstart = e => drag(e, d.id);
+            doc.onclick = () => openDoc(d.id);
+            explorer.appendChild(doc);
+        });
 }
 
-showDocs();
+render();
 </script>
 
 </body>
