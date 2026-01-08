@@ -2,7 +2,7 @@
 <html lang="nl">
 <head>
 <meta charset="UTF-8">
-<title>Explorer 2.5</title>
+<title>Explorer 2.8</title>
 
 <style>
 :root {
@@ -24,9 +24,8 @@ body {
     color: white;
 }
 
-/* SIDEBAR */
 aside {
-    width: 320px;
+    width: 330px;
     background: var(--panel);
     padding: 15px;
     display: flex;
@@ -40,14 +39,6 @@ h2 {
     text-shadow: 0 0 12px var(--neon);
 }
 
-input, textarea {
-    background: #0b1020;
-    border: 1px solid #1f2a4a;
-    color: white;
-    padding: 10px;
-    border-radius: 8px;
-}
-
 button {
     background: transparent;
     border: 1px solid var(--neon);
@@ -55,7 +46,6 @@ button {
     padding: 8px;
     border-radius: 8px;
     cursor: pointer;
-    transition: 0.25s;
 }
 
 button:hover {
@@ -64,19 +54,16 @@ button:hover {
     box-shadow: 0 0 15px var(--neon);
 }
 
-/* EXPLORER ITEMS */
 .item {
     padding: 8px;
     border-radius: 6px;
     margin-bottom: 6px;
     background: #0c1225;
     cursor: pointer;
-    transition: 0.2s;
 }
 
 .item:hover {
     background: #16204a;
-    box-shadow: 0 0 10px rgba(0,247,255,0.4);
 }
 
 .folder {
@@ -87,12 +74,19 @@ button:hover {
     outline: 2px dashed var(--neon);
 }
 
-/* MAIN */
 main {
     flex: 1;
     padding: 20px;
     display: flex;
     flex-direction: column;
+}
+
+input, textarea {
+    background: #0b1020;
+    border: 1px solid #1f2a4a;
+    color: white;
+    padding: 10px;
+    border-radius: 8px;
 }
 
 textarea {
@@ -126,9 +120,10 @@ textarea {
 <body>
 
 <aside>
-    <h2>Explorer 2.5</h2>
+    <h2>Explorer 2.8</h2>
     <button onclick="newFolder()">📁 Nieuwe map</button>
     <button onclick="newDoc()">📄 Nieuw document</button>
+    <button onclick="showTrash()">🗑 Prullenmand</button>
     <div id="explorer"></div>
 </aside>
 
@@ -144,12 +139,21 @@ textarea {
 let currentId = null;
 let contextTarget = null;
 let contextType = null;
+let view = "explorer";
 
 const load = k => JSON.parse(localStorage.getItem(k) || "[]");
 const save = (k,v) => localStorage.setItem(k, JSON.stringify(v));
 
-document.addEventListener("click", () => context.style.display = "none");
 document.addEventListener("contextmenu", e => e.preventDefault());
+document.addEventListener("click", () => context.style.display = "none");
+
+/* AUTO CLEAN TRASH (30 dagen) */
+(function(){
+    let trash = load("trash");
+    const now = Date.now();
+    trash = trash.filter(t => now - t.deletedAt < 30*24*60*60*1000);
+    save("trash", trash);
+})();
 
 function newFolder() {
     const name = prompt("Map naam");
@@ -167,8 +171,8 @@ function newDoc() {
 }
 
 function saveDoc() {
-    const docs = load("docs");
     if (!title.value) return alert("Titel nodig");
+    const docs = load("docs");
 
     if (currentId) {
         const d = docs.find(d => d.id === currentId);
@@ -193,14 +197,15 @@ function openDoc(id) {
     content.value = d.content;
 }
 
-/* DRAG */
+/* DRAG SYSTEM */
 function dragStart(e, id) {
-    e.dataTransfer.setData("doc", id);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("docId", id);
 }
 
 function dropDoc(e, folderId) {
     e.preventDefault();
-    const id = e.dataTransfer.getData("doc");
+    const id = e.dataTransfer.getData("docId");
     if (!id) return;
     const docs = load("docs");
     docs.find(d => d.id === id).folderId = folderId;
@@ -216,8 +221,12 @@ function openContext(e, id, type) {
 
     context.innerHTML = `
         <div onclick="rename()">✏ Naam wijzigen</div>
-        <div onclick="remove()">🗑 Verwijderen</div>
+        <div onclick="toTrash()">🗑 Verplaats naar Prullenmand</div>
     `;
+
+    if (type === "doc") {
+        context.innerHTML += `<div onclick="removeFromFolder()">📂 Uit map halen</div>`;
+    }
 
     context.style.left = e.clientX + "px";
     context.style.top = e.clientY + "px";
@@ -237,25 +246,58 @@ function rename() {
         f.find(x => x.id === contextTarget).name = name;
         save("folders", f);
     }
-    context.style.display = "none";
     render();
 }
 
-function remove() {
+function toTrash() {
+    let trash = load("trash");
+
     if (contextType === "doc") {
-        save("docs", load("docs").filter(d => d.id !== contextTarget));
-    } else {
-        save("folders", load("folders").filter(f => f.id !== contextTarget));
-        const docs = load("docs");
-        docs.forEach(d => { if (d.folderId === contextTarget) d.folderId = null; });
+        let docs = load("docs");
+        const d = docs.find(x => x.id === contextTarget);
+        docs = docs.filter(x => x.id !== contextTarget);
         save("docs", docs);
+        trash.push({ type:"doc", data:d, deletedAt:Date.now() });
+    } else {
+        let folders = load("folders");
+        const f = folders.find(x => x.id === contextTarget);
+        folders = folders.filter(x => x.id !== contextTarget);
+        save("folders", folders);
+
+        const docs = load("docs").filter(d => d.folderId === contextTarget);
+        save("docs", load("docs").filter(d => d.folderId !== contextTarget));
+
+        trash.push({ type:"folder", data:{ folder:f, docs }, deletedAt:Date.now() });
     }
-    context.style.display = "none";
+
+    save("trash", trash);
     render();
+}
+
+function removeFromFolder() {
+    const docs = load("docs");
+    docs.find(d => d.id === contextTarget).folderId = null;
+    save("docs", docs);
+    render();
+}
+
+/* PRULLENMAND */
+function showTrash() {
+    view = "trash";
+    explorer.innerHTML = "<h3>🗑 Prullenmand</h3>";
+    load("trash").forEach(t => {
+        const div = document.createElement("div");
+        div.className = "item";
+        div.textContent = t.type === "doc"
+            ? "📄 " + t.data.title
+            : "📁 " + t.data.folder.name;
+        explorer.appendChild(div);
+    });
 }
 
 /* RENDER */
 function render() {
+    view = "explorer";
     explorer.innerHTML = "";
     const folders = load("folders");
     const docs = load("docs");
