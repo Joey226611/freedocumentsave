@@ -2,13 +2,13 @@
 <html lang="nl">
 <head>
 <meta charset="UTF-8">
-<title>Explorer 2.0</title>
+<title>Explorer 2.5</title>
 
 <style>
 :root {
     --neon: #00f7ff;
-    --bg: #0b0f1a;
-    --panel: #131a2a;
+    --bg: #05070f;
+    --panel: #0c1225;
 }
 
 * {
@@ -26,19 +26,18 @@ body {
 
 /* SIDEBAR */
 aside {
-    width: 300px;
+    width: 320px;
     background: var(--panel);
     padding: 15px;
     display: flex;
     flex-direction: column;
     gap: 10px;
-    box-shadow: inset -1px 0 0 rgba(255,255,255,0.05);
 }
 
 h2 {
     margin: 0;
     color: var(--neon);
-    text-shadow: 0 0 10px var(--neon);
+    text-shadow: 0 0 12px var(--neon);
 }
 
 input, textarea {
@@ -56,7 +55,7 @@ button {
     padding: 8px;
     border-radius: 8px;
     cursor: pointer;
-    transition: 0.3s;
+    transition: 0.25s;
 }
 
 button:hover {
@@ -65,13 +64,13 @@ button:hover {
     box-shadow: 0 0 15px var(--neon);
 }
 
-/* ITEMS */
+/* EXPLORER ITEMS */
 .item {
     padding: 8px;
     border-radius: 6px;
     margin-bottom: 6px;
     background: #0c1225;
-    cursor: grab;
+    cursor: pointer;
     transition: 0.2s;
 }
 
@@ -81,10 +80,10 @@ button:hover {
 }
 
 .folder {
-    border-left: 3px solid #7c7cff;
+    border-left: 4px solid #7c7cff;
 }
 
-.dragover {
+.drag-over {
     outline: 2px dashed var(--neon);
 }
 
@@ -100,43 +99,64 @@ textarea {
     flex: 1;
     resize: none;
 }
+
+/* CONTEXT MENU */
+#context {
+    position: fixed;
+    display: none;
+    background: #0b1020;
+    border: 1px solid var(--neon);
+    border-radius: 10px;
+    box-shadow: 0 0 20px rgba(0,247,255,0.6);
+    z-index: 9999;
+}
+
+#context div {
+    padding: 10px 14px;
+    cursor: pointer;
+}
+
+#context div:hover {
+    background: var(--neon);
+    color: black;
+}
 </style>
 </head>
 
 <body>
 
 <aside>
-    <h2>Explorer 2.0</h2>
-
-    <input id="search" placeholder="🔍 Zoeken..." oninput="render()">
-
+    <h2>Explorer 2.5</h2>
     <button onclick="newFolder()">📁 Nieuwe map</button>
     <button onclick="newDoc()">📄 Nieuw document</button>
-
     <div id="explorer"></div>
 </aside>
 
 <main>
     <input id="title" placeholder="Document titel">
     <textarea id="content" placeholder="Typ hier..."></textarea>
-
     <button onclick="saveDoc()">💾 Opslaan</button>
-    <button onclick="removeDoc()">🗑 Naar prullenmand</button>
 </main>
+
+<div id="context"></div>
 
 <script>
 let currentId = null;
+let contextTarget = null;
+let contextType = null;
 
 const load = k => JSON.parse(localStorage.getItem(k) || "[]");
 const save = (k,v) => localStorage.setItem(k, JSON.stringify(v));
 
+document.addEventListener("click", () => context.style.display = "none");
+document.addEventListener("contextmenu", e => e.preventDefault());
+
 function newFolder() {
     const name = prompt("Map naam");
     if (!name) return;
-
-    const folders = load("folders");
-    folders.push({ id: crypto.randomUUID(), name });
-    save("folders", folders);
+    const f = load("folders");
+    f.push({ id: crypto.randomUUID(), name });
+    save("folders", f);
     render();
 }
 
@@ -173,35 +193,70 @@ function openDoc(id) {
     content.value = d.content;
 }
 
-function removeDoc() {
-    if (!currentId) return;
-    let docs = load("docs");
-    docs = docs.filter(d => d.id !== currentId);
-    save("docs", docs);
-    newDoc();
-    render();
+/* DRAG */
+function dragStart(e, id) {
+    e.dataTransfer.setData("doc", id);
 }
 
-/* DRAG SYSTEM */
-function drag(e, id) {
-    e.dataTransfer.setData("id", id);
-}
-
-function drop(e, folderId) {
+function dropDoc(e, folderId) {
     e.preventDefault();
-    const id = e.dataTransfer.getData("id");
+    const id = e.dataTransfer.getData("doc");
+    if (!id) return;
     const docs = load("docs");
-    const d = docs.find(d => d.id === id);
-    d.folderId = folderId;
+    docs.find(d => d.id === id).folderId = folderId;
     save("docs", docs);
     render();
 }
 
-function render() {
-    const explorer = document.getElementById("explorer");
-    explorer.innerHTML = "";
+/* CONTEXT MENU */
+function openContext(e, id, type) {
+    e.preventDefault();
+    contextTarget = id;
+    contextType = type;
 
-    const query = search.value.toLowerCase();
+    context.innerHTML = `
+        <div onclick="rename()">✏ Naam wijzigen</div>
+        <div onclick="remove()">🗑 Verwijderen</div>
+    `;
+
+    context.style.left = e.clientX + "px";
+    context.style.top = e.clientY + "px";
+    context.style.display = "block";
+}
+
+function rename() {
+    const name = prompt("Nieuwe naam");
+    if (!name) return;
+
+    if (contextType === "doc") {
+        const d = load("docs");
+        d.find(x => x.id === contextTarget).title = name;
+        save("docs", d);
+    } else {
+        const f = load("folders");
+        f.find(x => x.id === contextTarget).name = name;
+        save("folders", f);
+    }
+    context.style.display = "none";
+    render();
+}
+
+function remove() {
+    if (contextType === "doc") {
+        save("docs", load("docs").filter(d => d.id !== contextTarget));
+    } else {
+        save("folders", load("folders").filter(f => f.id !== contextTarget));
+        const docs = load("docs");
+        docs.forEach(d => { if (d.folderId === contextTarget) d.folderId = null; });
+        save("docs", docs);
+    }
+    context.style.display = "none";
+    render();
+}
+
+/* RENDER */
+function render() {
+    explorer.innerHTML = "";
     const folders = load("folders");
     const docs = load("docs");
 
@@ -210,31 +265,32 @@ function render() {
         div.className = "item folder";
         div.textContent = "📁 " + f.name;
         div.ondragover = e => e.preventDefault();
-        div.ondrop = e => drop(e, f.id);
+        div.ondrop = e => dropDoc(e, f.id);
+        div.oncontextmenu = e => openContext(e, f.id, "folder");
         explorer.appendChild(div);
 
-        docs.filter(d => d.folderId === f.id && d.title.toLowerCase().includes(query))
-            .forEach(d => {
-                const doc = document.createElement("div");
-                doc.className = "item";
-                doc.textContent = "📄 " + d.title;
-                doc.draggable = true;
-                doc.ondragstart = e => drag(e, d.id);
-                doc.onclick = () => openDoc(d.id);
-                explorer.appendChild(doc);
-            });
-    });
-
-    docs.filter(d => !d.folderId && d.title.toLowerCase().includes(query))
-        .forEach(d => {
+        docs.filter(d => d.folderId === f.id).forEach(d => {
             const doc = document.createElement("div");
             doc.className = "item";
             doc.textContent = "📄 " + d.title;
             doc.draggable = true;
-            doc.ondragstart = e => drag(e, d.id);
+            doc.ondragstart = e => dragStart(e, d.id);
             doc.onclick = () => openDoc(d.id);
+            doc.oncontextmenu = e => openContext(e, d.id, "doc");
             explorer.appendChild(doc);
         });
+    });
+
+    docs.filter(d => !d.folderId).forEach(d => {
+        const doc = document.createElement("div");
+        doc.className = "item";
+        doc.textContent = "📄 " + d.title;
+        doc.draggable = true;
+        doc.ondragstart = e => dragStart(e, d.id);
+        doc.onclick = () => openDoc(d.id);
+        doc.oncontextmenu = e => openContext(e, d.id, "doc");
+        explorer.appendChild(doc);
+    });
 }
 
 render();
